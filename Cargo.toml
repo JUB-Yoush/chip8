@@ -1,0 +1,8 @@
+[package]
+name = "chip8"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+grid = "0.16.2"
+raylib = "5.5.1"

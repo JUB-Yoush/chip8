@@ -1,6 +1,12 @@
+use bit_vec::BitVec;
 use grid::*;
 use raylib::prelude::*;
-use std::fs;
+use std::ops::Range;
+use std::{
+    fs,
+    io::{self, Error},
+    ops::{RangeBounds, RangeToInclusive},
+};
 
 #[derive(Clone, Copy)]
 struct Point {
@@ -10,7 +16,7 @@ struct Point {
 
 enum Instruction {
     ClearScreen,
-    Jump(u16),
+    Jump(u8),
     SubRoutine(u16),
     Return,
     CompareReg {
@@ -40,16 +46,19 @@ enum Instruction {
 }
 
 fn main() -> Result<(), std::io::Error> {
+    // hardware components
     let mut pc: usize = 0;
-    let mut screen_grid: Grid<u8> = Grid::new(64, 32);
-
+    let mut screen_grid: Grid<bool> = Grid::new(64, 32);
+    let mut ram: [u8; 4000] = [0; 4000];
     let mut stack: Vec<u16> = Vec::new();
+    let mut rom: Vec<u8> = fs::read("roms/ibm.ch8")?;
+
+    // rendering
     let pixel_scale = 8;
     let (mut rl, thread) = raylib::init()
         .size(64 * pixel_scale, 32 * pixel_scale)
         .title("chipple")
         .build();
-    let rom: Vec<u8> = fs::read("roms/ibm.ch8")?;
     println!("{:?}", rom);
     // main loop
 
@@ -65,24 +74,108 @@ fn main() -> Result<(), std::io::Error> {
             pixel_scale,
             Color::WHITE,
         );
-        let instruction_bytes: usize = fetch(pc.clone(), &rom);
+        let instruction_slice = fetch(pc.clone(), &rom);
         pc += 2;
-        let instruction = decode(instruction_bytes);
+        match instruction_slice {
+            Some(value) => {
+                let instruction = decode(instruction_slice.unwrap());
+            }
+            None => {
+                println!("we've reached the end of the rom.");
+                panic!("balls");
+            }
+        }
         //        execute(instruction);
     }
 
     Ok(())
 }
 
-fn fetch(pc: usize, rom: &Vec<u8>) -> usize {
-    return (rom[pc] + rom[pc + 1]) as usize;
+fn fetch(pc: usize, rom: &Vec<u8>) -> Option<&[u8]> {
+    if pc >= rom.len() - 1 {
+        None
+    } else {
+        Some(rom.get(pc..=pc + 1)?.clone())
+    }
 }
 
-fn decode(instruction_bytes: usize) -> Instruction {
-    Instruction::Return
+fn decode(instruction_bytes: &[u8]) -> Option<Instruction> {
+    print!(
+        "{:#01x} | {:#01x} \n",
+        instruction_bytes.get(0)?,
+        instruction_bytes.get(1)?
+    );
+
+    let first_byte = instruction_bytes.first()?;
+    let second_byte = instruction_bytes.last()?;
+    let byte_vec = BitVec::from_bytes(instruction_bytes);
+
+    match first_byte {
+        0x00 => match second_byte {
+            0xEE => Some(Instruction::Return),
+            0xE0 => Some(Instruction::ClearScreen),
+            _ => None,
+        },
+        //jump if *jump >= 0x10 || *jump < 0x20 => Some(Instruction::Jump(byte_vec.get())),
+        _ => None,
+    }
+}
+
+fn bits_to_value(mut bits: BitVec, range: Range<usize>) -> u16 {
+    // remove bits before and after range
+    bits.split_off(range.end);
+    let split_bits = bits.split_off(range.start);
+
+    let scaled_range = Range {
+        start: 0,
+        end: range.end - range.start,
+    };
+    let end = scaled_range.end.clone() - 1;
+
+    let mut res: u16 = 0;
+    for i in scaled_range.rev() {
+        // skip 0s
+        if !split_bits.get(end - i).unwrap() {
+            continue;
+        }
+        // add 2^i to the value
+        let val = u16::pow(2, (i) as u32);
+        res += val;
+    }
+    res
+}
+
+fn hex_digit(bits: BitVec, offset: u8) -> u8 {
+    //returns the indivisual hex digit at that position
+    // FF => 255 => 1111 1111
+    match offset {
+        0 => bits_to_value(bits, Range { start: 0, end: 4 }) as u8,
+        1 => bits_to_value(bits, Range { start: 4, end: 8 }) as u8,
+        2 => bits_to_value(bits, Range { start: 8, end: 12 }) as u8,
+        3 => bits_to_value(bits, Range { start: 12, end: 16 }) as u8,
+        _ => panic!("invalid offset idiot"),
+    }
 }
 
 fn execute(instruction: Instruction) {
     use Instruction::*;
     //match Instruction {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bit_2_val_tests() {
+        let result = bits_to_value(BitVec::from_bytes(&[245]), Range { start: 4, end: 8 });
+        assert_eq!(result, 5);
+        let result = bits_to_value(BitVec::from_bytes(&[240]), Range { start: 1, end: 7 });
+        assert_eq!(result, 56);
+    }
+    #[test]
+    fn bits_2_hex_tests() {
+        let result = hex_digit(BitVec::from_bytes(&[0xEE, 0xDA]), 3);
+        assert_eq!(result, 0xA);
+    }
 }

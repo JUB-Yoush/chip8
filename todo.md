@@ -9,5 +9,6 @@
 ### fetching
 
 ### decoding
+- need a function that will let me specify a range of bits and convert those bits to a value.
 
 ### executing

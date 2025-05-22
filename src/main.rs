@@ -1,6 +1,5 @@
 use bit_vec::BitVec;
 use grid::*;
-use raylib::prelude::*;
 use std::ops::Range;
 use std::{
     fs,
@@ -8,10 +7,7 @@ use std::{
     ops::{RangeBounds, RangeToInclusive},
 };
 
-// use sdl3::event::Event;
-// use sdl3::keyboard::Keycode;
-// use sdl3::pixels::Color;
-// use std::time::Duration;
+use macroquad::prelude::*;
 
 #[derive(Clone, Copy)]
 struct Point {
@@ -36,6 +32,19 @@ struct Point {
 // 0xE0, 0x90, 0x90, 0x90, 0xE0, // D
 // 0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
 // 0xF0, 0x80, 0xF0, 0x80, 0x80  // F
+
+trait UpdateDisplay {
+    fn update_display(&mut self, x: usize, y: usize, state: bool) {}
+}
+
+impl UpdateDisplay for Grid<bool> {
+    fn update_display(&mut self, x: usize, y: usize, state: bool) {
+        let row = self.remove_row(x);
+        let mut row = row.unwrap();
+        row[y] = state;
+        self.insert_row(x, row);
+    }
+}
 
 enum Instruction {
     ClearScreen,
@@ -67,8 +76,8 @@ enum Instruction {
         height: u8,
     },
 }
-
-fn main() -> Result<(), std::io::Error> {
+#[macroquad::main("chip-8")]
+async fn main() -> Result<(), std::io::Error> {
     // hardware components
     let mut pc: usize = 0;
     let mut screen_grid: Grid<bool> = Grid::new(64, 32);
@@ -77,47 +86,63 @@ fn main() -> Result<(), std::io::Error> {
     let mut rom: Vec<u8> = fs::read("roms/ibm.ch8")?;
 
     // rendering
-    let pixel_scale = 8;
-    let (mut rl, thread) = raylib::init()
-        .size(64 * pixel_scale, 32 * pixel_scale)
-        .title("chipple")
-        .build();
+    let pixel_scale: usize = 16;
     println!("{:?}", rom);
     // main loop
 
-    while !rl.window_should_close() {
-        let mut d = rl.begin_drawing(&thread);
-        let mut framebuffer = d.load_render_texture(&thread, 64, 32);
-        d.begin_texture_mode(&thread, &mut *framebuffer.unwrap());
-        d.clear_background(Color::BLACK);
-        d = clear_screen(d, &thread);
-        d.draw_rectangle(
-            16 * pixel_scale,
-            16 * pixel_scale,
-            pixel_scale,
-            pixel_scale,
-            Color::WHITE,
-        );
-        let instruction_slice = fetch(pc, &rom);
-        pc += 2;
-        /*
-        match instruction_slice {
-            Some(value) => {
-                let instruction = decode(value);
-                if instruction.is_err() {
-                    panic!("fakeass instruction")
-                }
-                execute(instruction.unwrap(), d, &thread);
-            }
-            None => {
-                println!("we've reached the end of the rom.");
-                panic!("balls");
-            }
-        }
-        */
+    clear_background(BLACK);
+    'running: loop {
+        request_new_screen_size(64. * pixel_scale as f32, 32. * pixel_scale as f32);
+        screen_grid.update_display(10, 8, true);
+        screen_grid.update_display(9, 8, true);
+        screen_grid.update_display(8, 8, true);
+        render_display(&screen_grid, pixel_scale);
+
+        // let instruction_slice = fetch(pc, &rom);
+        // pc += 2;
+        // match instruction_slice {
+        //     Some(value) => {
+        //         let instruction = decode(value);
+        //         if instruction.is_err() {
+        //             panic!("fakeass instruction")
+        //         }
+        //         execute(instruction.unwrap());
+        //     }
+        //     None => {
+        //         println!("we've reached the end of the rom.");
+        //         panic!("balls");
+        //     }
+        // }
+
+        next_frame().await
     }
 
     Ok(())
+}
+
+fn update_display(x: usize, y: usize, state: bool, mut screen_grid: Grid<bool>) -> Grid<bool> {
+    let row = screen_grid.remove_row(y);
+    let mut row = row.unwrap();
+    row[x] = state;
+    screen_grid.insert_row(y, row);
+    // appease the borrow checker
+    screen_grid
+}
+
+fn render_display(screen_grid: &Grid<bool>, pixel_scale: usize) {
+    for (point, on) in screen_grid.indexed_iter() {
+        //println!("pixel at {}x{} is {}", point.0, point.1, on);
+        draw_rectangle(
+            (point.0 * pixel_scale) as f32,
+            (point.1 * pixel_scale) as f32,
+            pixel_scale as f32,
+            pixel_scale as f32,
+            match on {
+                true => WHITE,
+                false => BLACK,
+            },
+        );
+    }
 }
 
 fn fetch(pc: usize, rom: &[u8]) -> Option<&[u8]> {
@@ -206,17 +231,12 @@ fn hex_digit(bits: BitVec, offset: u8) -> u8 {
     }
 }
 
-fn execute(instruction: Instruction, d: RaylibDrawHandle, thread: &RaylibThread) {
+fn execute(instruction: Instruction) {
     use Instruction::*;
     // match instruction {
     //     ClearScreen => clear_screen(d, thread),
     //     _ => println!("unimplemented"),
     // }
-}
-
-fn clear_screen<'a>(mut d: RaylibDrawHandle<'a>, thread: &'a RaylibThread) -> RaylibDrawHandle<'a> {
-    d.clear_background(Color::RED);
-    d
 }
 
 #[cfg(test)]

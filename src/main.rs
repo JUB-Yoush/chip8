@@ -8,10 +8,10 @@ use std::{
     ops::{RangeBounds, RangeToInclusive},
 };
 
-use sdl3::event::Event;
-use sdl3::keyboard::Keycode;
-use sdl3::pixels::Color;
-use std::time::Duration;
+// use sdl3::event::Event;
+// use sdl3::keyboard::Keycode;
+// use sdl3::pixels::Color;
+// use std::time::Duration;
 
 #[derive(Clone, Copy)]
 struct Point {
@@ -90,6 +90,7 @@ fn main() -> Result<(), std::io::Error> {
         let mut framebuffer = d.load_render_texture(&thread, 64, 32);
         d.begin_texture_mode(&thread, &mut *framebuffer.unwrap());
         d.clear_background(Color::BLACK);
+        d = clear_screen(d, &thread);
         d.draw_rectangle(
             16 * pixel_scale,
             16 * pixel_scale,
@@ -99,20 +100,21 @@ fn main() -> Result<(), std::io::Error> {
         );
         let instruction_slice = fetch(pc, &rom);
         pc += 2;
+        /*
         match instruction_slice {
             Some(value) => {
                 let instruction = decode(value);
                 if instruction.is_err() {
                     panic!("fakeass instruction")
                 }
-                execute(instruction.unwrap());
+                execute(instruction.unwrap(), d, &thread);
             }
             None => {
                 println!("we've reached the end of the rom.");
                 panic!("balls");
             }
         }
-        //        execute(instruction);
+        */
     }
 
     Ok(())
@@ -146,7 +148,7 @@ fn decode(instruction_bytes: &[u8]) -> Result<Instruction, &'static str> {
             0xE => Ok(Return),
             //0xE0
             0x0 => Ok(ClearScreen),
-            _ => Err("invalid instruction"),
+            _ => Err("invalid 0x0 instruction instruction"),
         },
         0x1 => Ok(Jump(bits_to_value(
             bit_vec.clone(),
@@ -204,15 +206,18 @@ fn hex_digit(bits: BitVec, offset: u8) -> u8 {
     }
 }
 
-fn execute(instruction: Instruction) {
+fn execute(instruction: Instruction, d: RaylibDrawHandle, thread: &RaylibThread) {
     use Instruction::*;
-    match Instruction {
-        ClearScreen => clear_screen(),
-        _ => println!("unimplemented"),
-    }
+    // match instruction {
+    //     ClearScreen => clear_screen(d, thread),
+    //     _ => println!("unimplemented"),
+    // }
 }
 
-fn clear_screen() {}
+fn clear_screen<'a>(mut d: RaylibDrawHandle<'a>, thread: &'a RaylibThread) -> RaylibDrawHandle<'a> {
+    d.clear_background(Color::RED);
+    d
+}
 
 #[cfg(test)]
 mod tests {

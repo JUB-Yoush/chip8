@@ -8,15 +8,38 @@ use std::{
     ops::{RangeBounds, RangeToInclusive},
 };
 
+use sdl3::event::Event;
+use sdl3::keyboard::Keycode;
+use sdl3::pixels::Color;
+use std::time::Duration;
+
 #[derive(Clone, Copy)]
 struct Point {
     pub x: u8,
     pub y: u8,
 }
 
+//font byte representation
+// 0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+// 0x20, 0x60, 0x20, 0x20, 0x70, // 1
+// 0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+// 0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+// 0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+// 0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+// 0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+// 0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+// 0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+// 0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+// 0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+// 0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+// 0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+// 0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+// 0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+// 0xF0, 0x80, 0xF0, 0x80, 0x80  // F
+
 enum Instruction {
     ClearScreen,
-    Jump(u8),
+    Jump(u16),
     SubRoutine(u16),
     Return,
     CompareReg {
@@ -74,11 +97,15 @@ fn main() -> Result<(), std::io::Error> {
             pixel_scale,
             Color::WHITE,
         );
-        let instruction_slice = fetch(pc.clone(), &rom);
+        let instruction_slice = fetch(pc, &rom);
         pc += 2;
         match instruction_slice {
             Some(value) => {
-                let instruction = decode(instruction_slice.unwrap());
+                let instruction = decode(value);
+                if instruction.is_err() {
+                    panic!("fakeass instruction")
+                }
+                execute(instruction.unwrap());
             }
             None => {
                 println!("we've reached the end of the rom.");
@@ -91,33 +118,53 @@ fn main() -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn fetch(pc: usize, rom: &Vec<u8>) -> Option<&[u8]> {
+fn fetch(pc: usize, rom: &[u8]) -> Option<&[u8]> {
     if pc >= rom.len() - 1 {
         None
     } else {
-        Some(rom.get(pc..=pc + 1)?.clone())
+        Some(rom.get(pc..=pc + 1)?)
     }
 }
 
-fn decode(instruction_bytes: &[u8]) -> Option<Instruction> {
-    print!(
+fn decode(instruction_bytes: &[u8]) -> Result<Instruction, &'static str> {
+    /*
+    println!(
         "{:#01x} | {:#01x} \n",
         instruction_bytes.get(0)?,
         instruction_bytes.get(1)?
     );
+    */
 
-    let first_byte = instruction_bytes.first()?;
-    let second_byte = instruction_bytes.last()?;
-    let byte_vec = BitVec::from_bytes(instruction_bytes);
+    use Instruction::*;
+    // let first_byte = instruction_bytes.first()?;
+    // let second_byte = instruction_bytes.last()?;
+    let bit_vec = BitVec::from_bytes(instruction_bytes);
 
-    match first_byte {
-        0x00 => match second_byte {
-            0xEE => Some(Instruction::Return),
-            0xE0 => Some(Instruction::ClearScreen),
-            _ => None,
+    match hex_digit(bit_vec.clone(), 0) {
+        0x0 => match hex_digit(bit_vec.clone(), 3) {
+            //0xEE
+            0xE => Ok(Return),
+            //0xE0
+            0x0 => Ok(ClearScreen),
+            _ => Err("invalid instruction"),
         },
-        //jump if *jump >= 0x10 || *jump < 0x20 => Some(Instruction::Jump(byte_vec.get())),
-        _ => None,
+        0x1 => Ok(Jump(bits_to_value(
+            bit_vec.clone(),
+            Range { start: 4, end: 16 },
+        ))),
+        0x2 => Ok(SubRoutine(bits_to_value(
+            bit_vec.clone(),
+            Range { start: 4, end: 16 },
+        ))),
+        0x6 => Ok(Set {
+            value: (bits_to_value(bit_vec.clone(), Range { start: 8, end: 16 }) as u8),
+            address: hex_digit(bit_vec.clone(), 1),
+        }),
+        0x7 => Ok(Add {
+            value: (bits_to_value(bit_vec.clone(), Range { start: 8, end: 16 }) as u8),
+            address: hex_digit(bit_vec.clone(), 1),
+        }),
+        _ => Err("invalid instruction"),
     }
 }
 
@@ -130,7 +177,7 @@ fn bits_to_value(mut bits: BitVec, range: Range<usize>) -> u16 {
         start: 0,
         end: range.end - range.start,
     };
-    let end = scaled_range.end.clone() - 1;
+    let end = scaled_range.end - 1;
 
     let mut res: u16 = 0;
     for i in scaled_range.rev() {
@@ -159,8 +206,13 @@ fn hex_digit(bits: BitVec, offset: u8) -> u8 {
 
 fn execute(instruction: Instruction) {
     use Instruction::*;
-    //match Instruction {}
+    match Instruction {
+        ClearScreen => clear_screen(),
+        _ => println!("unimplemented"),
+    }
 }
+
+fn clear_screen() {}
 
 #[cfg(test)]
 mod tests {
